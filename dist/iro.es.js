@@ -5,6 +5,7 @@
  * github.com/jaames/iro.js
  */
 
+/* eslint-disable */
 // css class prefix for this element
 var CLASS_PREFIX = "iro__marker";
 var marker = function marker(svg, opts) {
@@ -669,12 +670,20 @@ var slider = function slider(svg, opts) {
       x = opts.x,
       y = opts.y,
       borderWidth = opts.border.w; // "range" limits how far the slider's marker can travel, and where it stops and starts along the X axis
-
-  opts.range = {
-    min: x + r,
-    max: x + w - r,
-    w: w - r * 2
-  };
+  if (opts.direction == 'vertical') {
+    opts.range = {
+      min: y + r,
+      max: y + h - r,
+      h: h - r * 2,
+      w: w + h + r
+    };
+  } else {
+    opts.range = {
+      min: x + r,
+      max: x + w - r,
+      w: w - r * 2
+    };
+  }
   opts.sliderType = opts.sliderType || "v";
   this.type = "slider";
   this._opts = opts;
@@ -701,6 +710,7 @@ var slider = function slider(svg, opts) {
       color: "#fff"
     }
   }));
+
   this._gradient = rect.gradient;
   this.marker = new marker(baseGroup, opts.marker);
 };
@@ -727,10 +737,13 @@ slider.prototype.update = function update (color$$1, changes) {
         stopColor: "hsl(" + hsl.h + "," + hsl.s + "%," + hsl.l + "%)"
       });
     }
-
     if (changes.v) {
       var percent = hsv.v / 100;
-      this.marker.move(range.min + percent * range.w, opts.y + opts.h / 2);
+      if (opts.direction == 'vertical') {
+        this.marker.move(opts.x + opts.r, range.min + percent * range.h);
+      } else {
+        this.marker.move(range.min + percent * range.w, opts.y + opts.h / 2);
+      }
     }
   }
 };
@@ -745,9 +758,16 @@ slider.prototype.update = function update (color$$1, changes) {
 slider.prototype.input = function input (x, y) {
   var opts = this._opts;
   var range = opts.range;
-  var dist = Math.max(Math.min(x, range.max), range.min) - range.min;
+  var direction = opts.direction == 'vertical' ? y : x;
+  var dist = Math.max(Math.min(direction, range.max), range.min) - range.min;
+  var v;
+  if (opts.direction == 'vertical') {
+    v = Math.round(100 / range.h * dist);
+  } else {
+    v = Math.round(100 / range.w * dist);
+  }
   return {
-    v: Math.round(100 / range.w * dist)
+    v: v
   };
 };
 /**
@@ -892,7 +912,7 @@ svgElement.prototype.setTransform = function setTransform (type, args) {
 
 
 svgElement.prototype.setAttrs = function setAttrs (attrs) {
-    var this$1 = this;
+  var this$1 = this;
 
   for (var attr in attrs) {
     var name = attr in SVG_ATTRIBUTE_SHORTHANDS ? SVG_ATTRIBUTE_SHORTHANDS[attr] : attr;
@@ -910,10 +930,16 @@ svgElement.prototype.setGradient = function setGradient (attr, gradient) {
 
 var svgGradient = function svgGradient(root, type, stops) {
   var stopElements = [];
-
-  var gradient = root._defs.insert(type + GRADIENT_SUFFIX, {
+  var attributes = {
     id: "iro" + GRADIENT_SUFFIX + GRADIENT_INDEX++
-  });
+  };
+
+  if (type == 'linear') {
+    attributes['x2'] = '0%';
+    attributes['y2'] = '100%';
+  }
+
+  var gradient = root._defs.insert(type + GRADIENT_SUFFIX, attributes);
 
   for (var offset in stops) {
     var stop = stops[offset];
@@ -1171,10 +1197,13 @@ colorPicker.prototype._mount = function _mount (el, opts) {
   var padding = opts.padding + 2 || 6,
       borderWidth = opts.borderWidth || 0,
       markerRadius = opts.markerRadius || 8,
+      sliderDirection = opts.sliderDirection || 'horizon',
       sliderMargin = opts.sliderMargin || 24,
+      sliderWidth = opts.sliderWidth || bodyWidth,
       sliderHeight = opts.sliderHeight || markerRadius * 2 + padding * 2 + borderWidth * 2,
-      bodyWidth = Math.min(height - sliderHeight - sliderMargin, width),
-      wheelRadius = bodyWidth / 2 - borderWidth,
+      bodyWidth = Math.min(height - (sliderDirection == 'vertical'? sliderWidth : sliderHeight) - sliderMargin, width),
+      wheelRadius = sliderDirection == 'vertical' ? bodyWidth / 2 - borderWidth - sliderWidth : bodyWidth / 2 - borderWidth,
+      sliderRadius = sliderDirection == 'vertical' ?  sliderWidth : sliderHeight,
       leftMargin = (width - bodyWidth) / 2;
   var marker = {
     r: markerRadius
@@ -1187,7 +1216,7 @@ colorPicker.prototype._mount = function _mount (el, opts) {
   this.el = el;
   this.svg = new svgRoot(el, width, height, opts.display);
   this.ui = [new wheel(this.svg, {
-    cX: leftMargin + bodyWidth / 2,
+    cX: (sliderDirection == 'vertical'? (leftMargin + bodyWidth / 2) - sliderWidth : leftMargin + bodyWidth / 2),
     cY: bodyWidth / 2,
     r: wheelRadius,
     rMax: wheelRadius - (markerRadius + padding),
@@ -1197,11 +1226,12 @@ colorPicker.prototype._mount = function _mount (el, opts) {
     anticlockwise: opts.anticlockwise
   }), new slider(this.svg, {
     sliderType: "v",
-    x: leftMargin + borderWidth,
-    y: bodyWidth + sliderMargin,
-    w: bodyWidth - borderWidth * 2,
-    h: sliderHeight - borderWidth * 2,
-    r: sliderHeight / 2 - borderWidth,
+    direction: sliderDirection,
+    x: (sliderDirection == 'vertical' ? bodyWidth : leftMargin + borderWidth),
+    y: (sliderDirection == 'vertical' ? bodyWidth / 2 - wheelRadius : bodyWidth + sliderMargin),
+    w: sliderWidth - borderWidth * 2,
+    h: sliderDirection == 'vertical' ? wheelRadius * 2 : sliderHeight - borderWidth * 2,
+    r: sliderRadius / 2 - borderWidth,
     marker: marker,
     border: borderStyles
   })]; // Create an iroStyleSheet for this colorWheel's CSS overrides
